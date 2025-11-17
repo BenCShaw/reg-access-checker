@@ -1,0 +1,122 @@
+"""
+Access Policy Checker (Regulation Micro-Project)
+
+Tiny toy engine that decides whether a user with a given role
+can access a certain type of data for a given purpose,
+optionally in an emergency.
+
+This is just a sandbox for learning;
+how to think in rules, constraints, and justification.
+"""
+
+from dataclasses import dataclass
+from typing import Tuple
+from datetime import datetime
+
+
+@dataclass
+class AccessRequest:
+    role: str                 # e.g. "doctor", "nurse", "billing", "researcher", "admin"
+    data_type: str            # e.g. "full_record", "billing_info", "mental_health_notes", "deidentified_data"
+    purpose: str              # e.g. "treatment", "payment", "operations", "research"
+    emergency: bool = False   # emergency override flag
+
+
+def check_access(request: AccessRequest) -> Tuple[bool, str]:
+    """
+    Returns (allowed, reason).
+    """
+
+    role = request.role.lower()
+    data = request.data_type.lower()
+    purpose = request.purpose.lower()
+    emergency = request.emergency
+
+    # 1. Emergency override
+    if emergency and purpose == "treatment" and role in {"doctor", "nurse"}:
+        if data in {"full_record", "mental_health_notes"}:
+            return True, "Emergency override: treatment by clinical staff."
+
+    # 2. Treatment rules
+    if purpose == "treatment":
+        if role in {"doctor", "nurse"} and data in {"full_record", "mental_health_notes"}:
+            return True, "Treatment access for clinical role."
+        else:
+            return False, "Non-clinical role or unsupported data type for treatment."
+
+    # 3. Payment rules
+    if purpose == "payment":
+        if role == "billing" and data == "billing_info":
+            return True, "Billing role accessing billing information for payment."
+        else:
+            return False, "Only billing may access billing_info for payment."
+
+    # 4. Research rules
+    if purpose == "research":
+        if role == "researcher" and data == "deidentified_data":
+            return True, "Researcher may access de-identified data for research."
+        else:
+            return False, "Full or identifiable records are not allowed for research in this policy."
+
+    # 5. Operations rules
+    if purpose == "operations":
+        if role == "admin" and data == "deidentified_data":
+            return True, "Admin may access de-identified data for operations."
+        else:
+            return False, "Operations only allow de-identified data for admin role."
+
+    # Default deny
+    return False, "No matching rule: deny by default."
+
+def log_decision(request: AccessRequest, allowed: bool, reason: str,
+                 logfile: str = "access_audit.log") -> None:
+    """
+    Append a single access decision to an audit log file.
+
+    Each line looks like:
+    2025-11-16T20:31:12 | role=doctor | data=full_record | purpose=treatment | emergency=False | allowed=True | reason=...
+    """
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    line = (
+        f"{timestamp} | "
+        f"role={request.role} | "
+        f"data={request.data_type} | "
+        f"purpose={request.purpose} | "
+        f"emergency={request.emergency} | "
+        f"allowed={allowed} | "
+        f"reason={reason}\n"
+    )
+
+    with open(logfile, "a", encoding="utf-8") as f:
+        f.write(line)
+
+def interactive_cli():
+    print("=== Access Policy Checker ===")
+
+    role = input("Role (doctor, nurse, billing, researcher, admin): ").strip()
+    data_type = input("Data type (full_record, billing_info, mental_health_notes, deidentified_data): ").strip()
+    purpose = input("Purpose (treatment, payment, operations, research): ").strip()
+
+    emergency_input = input("Emergency? (y/n): ").strip().lower()
+    emergency = emergency_input in {"y", "yes"}
+
+    req = AccessRequest(
+        role=role,
+        data_type=data_type,
+        purpose=purpose,
+        emergency=emergency
+    )
+
+    allowed, reason = check_access(req)
+
+    #Log the decision for auditing
+    log_decision(req, allowed, reason)
+
+    print("\nDecision:")
+    print("Allowed:" if allowed else "DENIED:", reason)
+    print("Logged to access_audit.log")
+
+
+if __name__ == "__main__":
+    interactive_cli()
